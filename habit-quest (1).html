@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Habit Quest 🌙</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: #0F0F1A; color: #F0EAF8; font-family: 'Segoe UI', system-ui, sans-serif; }
+  ::-webkit-scrollbar { display: none; }
+  input::placeholder { color: #6B5A80; }
+  input:focus { border-color: rgba(139,107,177,0.6) !important; }
+  button:hover { opacity: 0.88; }
+  @keyframes popUp {
+    0%   { opacity: 1; transform: translateY(0) scale(1); }
+    60%  { opacity: 1; transform: translateY(-22px) scale(1.15); }
+    100% { opacity: 0; transform: translateY(-38px) scale(0.85); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const CATEGORIES = [
+  { id: "deen",   label: "Deen",   emoji: "🌙", color: "#8B6BB1" },
+  { id: "health", label: "Health", emoji: "💪", color: "#4CAF82" },
+  { id: "study",  label: "Study",  emoji: "📚", color: "#E8A838" },
+  { id: "life",   label: "Life",   emoji: "✨", color: "#E07A7A" },
+];
+
+const XP_VALUES = { easy: 10, medium: 20, hard: 35 };
+
+const RANKS = [
+  { min: 0,   max: 49,       title: "Novice",    icon: "🌱" },
+  { min: 50,  max: 99,       title: "Rising",    icon: "⭐" },
+  { min: 100, max: 149,      title: "Achiever",  icon: "🔥" },
+  { min: 150, max: 199,      title: "Champion",  icon: "💎" },
+  { min: 200, max: Infinity, title: "Legend",    icon: "👑" },
+];
+
+const QUOTES = [
+  "Actions are judged by intentions.",
+  "Take care of your good deeds as you take care of your wealth.",
+  "Verily, with hardship comes ease.",
+  "Begin with Bismillah and end with Alhamdulillah.",
+  "Small deeds done consistently are beloved.",
+];
+
+const DEFAULT_TASKS = [
+  { id: 1, text: "Fajr prayer",              category: "deen",   difficulty: "easy",   done: false },
+  { id: 2, text: "Read Quran (1 page)",       category: "deen",   difficulty: "medium", done: false },
+  { id: 3, text: "Drink 8 glasses of water",  category: "health", difficulty: "easy",   done: false },
+  { id: 4, text: "Study session (1 hr)",      category: "study",  difficulty: "hard",   done: false },
+  { id: 5, text: "Evening walk",              category: "health", difficulty: "medium", done: false },
+];
+
+function getRank(xp) {
+  return RANKS.find(r => xp >= r.min && xp <= r.max) || RANKS[0];
+}
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+function save(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+function getTodayKey() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function App() {
+  const todayKey = getTodayKey();
+
+  const [tasks, setTasks] = React.useState(() => {
+    const saved = load("hq_tasks_" + todayKey, null);
+    return saved || DEFAULT_TASKS.map(t => ({ ...t, done: false }));
+  });
+
+  const [totalXP,  setTotalXP]  = React.useState(() => load("hq_xp_total", 0));
+  const [streak,   setStreak]   = React.useState(() => {
+    const last = load("hq_last_day", null);
+    const s    = load("hq_streak", 0);
+    if (!last) return s;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yKey = yesterday.toISOString().split("T")[0];
+    return (last === todayKey || last === yKey) ? s : 0;
+  });
+
+  const [showAdd,     setShowAdd]     = React.useState(false);
+  const [newTask,     setNewTask]     = React.useState({ text: "", category: "life", difficulty: "easy" });
+  const [celebration, setCelebration] = React.useState(null);
+  const [filter,      setFilter]      = React.useState("all");
+  const [nextId,      setNextId]      = React.useState(() => load("hq_next_id", 100));
+  const [quote]                       = React.useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+
+  // Persist whenever tasks change
+  React.useEffect(() => {
+    save("hq_tasks_" + todayKey, tasks);
+    const earned = tasks.filter(t => t.done).reduce((s, t) => s + XP_VALUES[t.difficulty], 0);
+    save("hq_xp_today_" + todayKey, earned);
+  }, [tasks]);
+
+  React.useEffect(() => { save("hq_xp_total", totalXP); }, [totalXP]);
+  React.useEffect(() => { save("hq_streak", streak); },   [streak]);
+  React.useEffect(() => { save("hq_next_id", nextId); },  [nextId]);
+
+  const todayXP = tasks.filter(t => t.done).reduce((s, t) => s + XP_VALUES[t.difficulty], 0);
+  const maxXP   = tasks.reduce((s, t) => s + XP_VALUES[t.difficulty], 0);
+  const pct     = maxXP > 0 ? Math.round((todayXP / maxXP) * 100) : 0;
+  const rank    = getRank(totalXP + todayXP);
+  const done    = tasks.filter(t => t.done).length;
+
+  function toggleTask(id) {
+    setTasks(prev => prev.map(t => {
+      if (t.id !== id) return t;
+      const nowDone = !t.done;
+      if (nowDone) {
+        const gained = XP_VALUES[t.difficulty];
+        setCelebration({ text: `+${gained} XP`, id });
+        setTimeout(() => setCelebration(null), 1200);
+        // Check if all done → streak
+        const allDone = prev.filter(x => x.id !== id).every(x => x.done);
+        if (allDone) {
+          const newXP = totalXP + todayXP + gained;
+          setTotalXP(newXP);
+          setStreak(s => s + 1);
+          save("hq_last_day", todayKey);
+        }
+      }
+      return { ...t, done: nowDone };
+    }));
+  }
+
+  function addTask() {
+    if (!newTask.text.trim()) return;
+    const t = { ...newTask, text: newTask.text.trim(), id: nextId, done: false };
+    setTasks(prev => [...prev, t]);
+    setNextId(n => n + 1);
+    setNewTask({ text: "", category: "life", difficulty: "easy" });
+    setShowAdd(false);
+  }
+
+  function removeTask(id) {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  }
+
+  const cat = id => CATEGORIES.find(c => c.id === id);
+  const filtered = filter === "all" ? tasks : tasks.filter(t => t.category === filter);
+
+  // ── styles ────────────────────────────────────────────────
+  const s = {
+    wrap:  { maxWidth: 480, margin: "0 auto", padding: "24px 16px 110px", position: "relative" },
+    card:  { background: "linear-gradient(135deg,#1C1533,#211842)", border: "1px solid rgba(139,107,177,.3)", borderRadius: 20, padding: "20px 22px", marginBottom: 20 },
+    tag:   (color) => ({ fontSize: 11, color, background: color + "22", padding: "2px 8px", borderRadius: 999 }),
+    chip:  (active, color) => ({
+      flexShrink: 0, padding: "6px 14px", borderRadius: 999,
+      border: `1px solid ${active ? (color || "#8B6BB1") : "rgba(255,255,255,.1)"}`,
+      background: active ? `${color || "#8B6BB1"}22` : "transparent",
+      color: active ? (color || "#C8A8E9") : "#9B8AB0",
+      fontSize: 13, cursor: "pointer", fontWeight: active ? 600 : 400,
+    }),
+    taskRow: (done) => ({
+      display: "flex", alignItems: "center", gap: 14,
+      background: done ? "rgba(76,175,130,.08)" : "rgba(255,255,255,.04)",
+      border: `1px solid ${done ? "rgba(76,175,130,.25)" : "rgba(255,255,255,.08)"}`,
+      borderRadius: 14, padding: "14px 16px", cursor: "pointer",
+    }),
+    check: (done, color) => ({
+      width: 24, height: 24, borderRadius: 8, flexShrink: 0,
+      border: `2px solid ${done ? "#4CAF82" : color || "#8B6BB1"}`,
+      background: done ? "#4CAF82" : "transparent",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }),
+    addInput: {
+      width: "100%", padding: "12px 14px", borderRadius: 12,
+      border: "1px solid rgba(139,107,177,.3)", background: "rgba(255,255,255,.05)",
+      color: "#F0EAF8", fontSize: 14, outline: "none", marginBottom: 12,
+    },
+    catBtn: (active, color) => ({
+      display: "block", width: "100%", padding: "7px 12px", borderRadius: 10,
+      textAlign: "left", marginBottom: 4,
+      border: `1px solid ${active ? color : "rgba(255,255,255,.08)"}`,
+      background: active ? color + "22" : "transparent",
+      color: active ? color : "#9B8AB0", fontSize: 13, cursor: "pointer",
+    }),
+    diffBtn: (active, color) => ({
+      display: "block", width: "100%", padding: "7px 12px", borderRadius: 10,
+      textAlign: "left", marginBottom: 4,
+      border: `1px solid ${active ? color : "rgba(255,255,255,.08)"}`,
+      background: active ? color + "22" : "transparent",
+      color: active ? color : "#9B8AB0", fontSize: 13, cursor: "pointer",
+    }),
+  };
+
+  const DIFFS = [
+    { id: "easy",   label: "Easy",   xp: 10, color: "#4CAF82" },
+    { id: "medium", label: "Medium", xp: 20, color: "#E8A838" },
+    { id: "hard",   label: "Hard",   xp: 35, color: "#E07A7A" },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh" }}>
+      {/* ambient glows */}
+      <div style={{ position:"fixed", inset:0, pointerEvents:"none", overflow:"hidden" }}>
+        <div style={{ position:"absolute", top:"-10%", right:"-10%", width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(139,107,177,.12) 0%,transparent 70%)" }} />
+        <div style={{ position:"absolute", bottom:"-5%", left:"-5%",  width:300, height:300, borderRadius:"50%", background:"radial-gradient(circle,rgba(76,175,130,.08)  0%,transparent 70%)" }} />
+      </div>
+
+      <div style={s.wrap}>
+
+        {/* ── Header ── */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div>
+              <p style={{ fontSize:13, color:"#9B8AB0", letterSpacing:1, textTransform:"uppercase" }}>{getGreeting()}, Fatima</p>
+              <h1 style={{ margin:"4px 0 0", fontSize:26, fontWeight:700, background:"linear-gradient(135deg,#C8A8E9,#8B6BB1)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>
+                Habit Quest
+              </h1>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:22 }}>{rank.icon}</div>
+              <div style={{ fontSize:12, color:"#C8A8E9", fontWeight:600 }}>{rank.title}</div>
+              <div style={{ fontSize:11, color:"#9B8AB0" }}>{totalXP + todayXP} XP total</div>
+            </div>
+          </div>
+          <p style={{ margin:"12px 0 0", fontSize:13, color:"#9B8AB0", fontStyle:"italic", borderLeft:"2px solid #8B6BB1", paddingLeft:10 }}>
+            "{quote}"
+          </p>
+        </div>
+
+        {/* ── Score card ── */}
+        <div style={s.card}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+            <div>
+              <div style={{ fontSize:13, color:"#9B8AB0", marginBottom:2 }}>Today's Score</div>
+              <div style={{ fontSize:38, fontWeight:800, color:"#C8A8E9", lineHeight:1 }}>
+                {pct}<span style={{ fontSize:18, fontWeight:400 }}>%</span>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:16 }}>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:22, fontWeight:700, color:"#E8A838" }}>+{todayXP}</div>
+                <div style={{ fontSize:11, color:"#9B8AB0" }}>XP today</div>
+              </div>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:22, fontWeight:700, color:"#4CAF82" }}>{done}/{tasks.length}</div>
+                <div style={{ fontSize:11, color:"#9B8AB0" }}>done</div>
+              </div>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:22, fontWeight:700, color:"#E8A838" }}>🔥{streak}</div>
+                <div style={{ fontSize:11, color:"#9B8AB0" }}>streak</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background:"rgba(255,255,255,.08)", borderRadius:999, height:10, overflow:"hidden" }}>
+            <div style={{ height:"100%", borderRadius:999, width:`${pct}%`, transition:"width .6s ease",
+              background: pct >= 100 ? "linear-gradient(90deg,#4CAF82,#8BE8A8)" : "linear-gradient(90deg,#8B6BB1,#C8A8E9)" }} />
+          </div>
+
+          <div style={{ marginTop:10, display:"flex", gap:4 }}>
+            {RANKS.map((r,i) => (
+              <div key={i} style={{ flex:1, height:3, borderRadius:2,
+                background: rank.title === r.title ? "#C8A8E9" : "rgba(255,255,255,.1)" }} />
+            ))}
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+            {RANKS.map((r,i) => <div key={i} style={{ fontSize:9, color:"#9B8AB0" }}>{r.icon}</div>)}
+          </div>
+        </div>
+
+        {/* ── Category filter ── */}
+        <div style={{ display:"flex", gap:8, marginBottom:16, overflowX:"auto", paddingBottom:4 }}>
+          {[{ id:"all", label:"All", emoji:"🗂️" }, ...CATEGORIES].map(c => (
+            <button key={c.id} onClick={() => setFilter(c.id)} style={s.chip(filter===c.id, c.color)}>
+              {c.emoji} {c.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Task list ── */}
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {filtered.length === 0 && (
+            <div style={{ textAlign:"center", color:"#9B8AB0", padding:40, fontSize:14 }}>
+              No tasks here yet ✨<br/><span style={{ fontSize:12 }}>Add one below!</span>
+            </div>
+          )}
+          {filtered.map(task => {
+            const c    = cat(task.category);
+            const xp   = XP_VALUES[task.difficulty];
+            const isC  = celebration?.id === task.id;
+            return (
+              <div key={task.id} style={{ position:"relative" }}>
+                {isC && (
+                  <div style={{ position:"absolute", top:-8, right:40, zIndex:10,
+                    background:"#E8A838", color:"#0F0F1A", fontWeight:800,
+                    padding:"4px 10px", borderRadius:999, fontSize:13,
+                    animation:"popUp 1.2s ease forwards", pointerEvents:"none" }}>
+                    {celebration.text}
+                  </div>
+                )}
+                <div onClick={() => toggleTask(task.id)} style={s.taskRow(task.done)}>
+                  <div style={s.check(task.done, c?.color)}>
+                    {task.done && <span style={{ color:"#0F0F1A", fontSize:13, fontWeight:900 }}>✓</span>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:15, fontWeight:500,
+                      color: task.done ? "#9B8AB0" : "#F0EAF8",
+                      textDecoration: task.done ? "line-through" : "none",
+                      textDecorationColor: "#9B8AB0" }}>
+                      {task.text}
+                    </div>
+                    <div style={{ display:"flex", gap:8, marginTop:4, alignItems:"center" }}>
+                      <span style={s.tag(c?.color)}>{c?.emoji} {c?.label}</span>
+                      <span style={{ fontSize:11, color:"#E8A838" }}>+{xp} XP</span>
+                      <span style={{ fontSize:10, color:"#9B8AB0", textTransform:"uppercase", letterSpacing:.5 }}>{task.difficulty}</span>
+                    </div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); removeTask(task.id); }} style={{
+                    background:"none", border:"none", color:"#9B8AB0", cursor:"pointer",
+                    fontSize:20, padding:4, lineHeight:1, opacity:.5 }}>×</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Add task panel ── */}
+        {showAdd && (
+          <div style={{ marginTop:16, background:"rgba(28,21,51,.97)", border:"1px solid rgba(139,107,177,.4)", borderRadius:20, padding:20 }}>
+            <p style={{ marginBottom:14, fontWeight:600, color:"#C8A8E9" }}>New Task</p>
+
+            <input
+              style={s.addInput}
+              placeholder="What do you want to accomplish?"
+              value={newTask.text}
+              onChange={e => setNewTask(p => ({ ...p, text: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && addTask()}
+            />
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+              <div>
+                <p style={{ marginBottom:6, fontSize:12, color:"#9B8AB0" }}>Category</p>
+                {CATEGORIES.map(c => (
+                  <button key={c.id} onClick={() => setNewTask(p => ({ ...p, category: c.id }))}
+                    style={s.catBtn(newTask.category===c.id, c.color)}>
+                    {c.emoji} {c.label}
+                  </button>
+                ))}
+              </div>
+              <div>
+                <p style={{ marginBottom:6, fontSize:12, color:"#9B8AB0" }}>Difficulty</p>
+                {DIFFS.map(d => (
+                  <button key={d.id} onClick={() => setNewTask(p => ({ ...p, difficulty: d.id }))}
+                    style={s.diffBtn(newTask.difficulty===d.id, d.color)}>
+                    {d.label} <span style={{ fontSize:11, opacity:.7 }}>+{d.xp} XP</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:10 }}>
+              <button onClick={addTask} style={{ flex:1, padding:12, borderRadius:12, border:"none",
+                background:"linear-gradient(135deg,#8B6BB1,#C8A8E9)",
+                color:"#0F0F1A", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                Add Task ✨
+              </button>
+              <button onClick={() => setShowAdd(false)} style={{ padding:"12px 18px", borderRadius:12,
+                border:"1px solid rgba(255,255,255,.1)", background:"transparent",
+                color:"#9B8AB0", cursor:"pointer", fontSize:14 }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── FAB ── */}
+        {!showAdd && (
+          <button onClick={() => setShowAdd(true)} style={{
+            position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)",
+            padding:"14px 32px", borderRadius:999, border:"none",
+            background:"linear-gradient(135deg,#8B6BB1,#C8A8E9)",
+            color:"#0F0F1A", fontWeight:700, fontSize:15, cursor:"pointer",
+            boxShadow:"0 8px 32px rgba(139,107,177,.4)",
+            display:"flex", alignItems:"center", gap:8,
+          }}>
+            <span style={{ fontSize:18 }}>＋</span> Add Task
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
